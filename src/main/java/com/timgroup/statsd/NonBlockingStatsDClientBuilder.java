@@ -38,6 +38,7 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
     public int connectionTimeout = NonBlockingStatsDClient.SOCKET_CONNECT_TIMEOUT_MS;
 
     public Callable<SocketAddress> addressLookup;
+    private boolean isUDStransport;
     public Callable<SocketAddress> telemetryAddressLookup;
 
     public String hostname;
@@ -134,12 +135,12 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
     }
 
     public NonBlockingStatsDClientBuilder address(String address) {
-        addressLookup = getAddressLookupFromUrl(address);
+        addressLookup = getAddressLookupFromUrl(address, false);
         return this;
     }
 
     public NonBlockingStatsDClientBuilder telemetryAddress(String address) {
-        telemetryAddressLookup = getAddressLookupFromUrl(address);
+        telemetryAddressLookup = getAddressLookupFromUrl(address, true);
         return this;
     }
 
@@ -240,7 +241,7 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
         Callable<SocketAddress> lookup = getAddressLookup();
 
         if (packetSize == 0) {
-            packetSize = (port == 0) ? NonBlockingStatsDClient.DEFAULT_UDS_MAX_PACKET_SIZE_BYTES :
+            packetSize = isUDStransport ? NonBlockingStatsDClient.DEFAULT_UDS_MAX_PACKET_SIZE_BYTES :
                 NonBlockingStatsDClient.DEFAULT_UDP_MAX_PACKET_SIZE_BYTES;
         }
 
@@ -271,13 +272,16 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
         }
 
         if (hostname != null) {
+            if (port == 0) {
+                isUDStransport = true;
+            }
             return staticAddress(hostname, port);
         }
 
         // Next, try various environment variables.
         String url = System.getenv(NonBlockingStatsDClient.DD_DOGSTATSD_URL_ENV_VAR);
         if (url != null) {
-            return getAddressLookupFromUrl(url);
+            return getAddressLookupFromUrl(url, false);
         }
 
         String namedPipeFromEnv = System.getenv(NonBlockingStatsDClient.DD_NAMED_PIPE_ENV_VAR);
@@ -288,10 +292,14 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
         String hostFromEnv = getHostnameFromEnvVar();
         int portFromEnv = getPortFromEnvVar(port);
 
+        if (portFromEnv == 0) {
+            isUDStransport = true;
+        }
+
         return staticAddress(hostFromEnv, portFromEnv);
     }
 
-    private Callable<SocketAddress> getAddressLookupFromUrl(String url) {
+    private Callable<SocketAddress> getAddressLookupFromUrl(String url, boolean isTelemetryAddress) {
         if (NamedPipeSocketAddress.isNamedPipe(url)) {
             return staticNamedPipeResolution(url);
         }
@@ -313,6 +321,9 @@ public class NonBlockingStatsDClientBuilder implements Cloneable {
         }
 
         if (parsed.getScheme().startsWith("unix")) {
+            if (!isTelemetryAddress) {
+                isUDStransport = true;
+            }
             String uriPath = parsed.getPath();
             return staticUnixResolution(
                     uriPath,
