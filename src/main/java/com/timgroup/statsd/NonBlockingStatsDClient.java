@@ -163,6 +163,7 @@ public class NonBlockingStatsDClient implements StatsDClient {
 
     final String prefix;
     private final ClientChannel clientChannel;
+    private boolean isUDSTransport;
     private final ClientChannel telemetryClientChannel;
     private final StatsDClientErrorHandler handler;
     private final String constantTagsRendered;
@@ -250,7 +251,7 @@ public class NonBlockingStatsDClient implements StatsDClient {
     NonBlockingStatsDClient(final String prefix, final int queueSize, final String[] constantTags,
             final StatsDClientErrorHandler errorHandler, final Callable<SocketAddress> addressLookup,
             final Callable<SocketAddress> telemetryAddressLookup, final int timeout, final int bufferSize,
-            final int maxPacketSizeBytes, String entityID, final int poolSize, final int processorWorkers,
+            int maxPacketSizeBytes, String entityID, final int poolSize, final int processorWorkers,
             final int senderWorkers, boolean blocking, final boolean enableTelemetry, final int telemetryFlushInterval,
             final int aggregationFlushInterval, final int aggregationShards, final ThreadFactory customThreadFactory,
             String containerID, final boolean originDetectionEnabled, final int connectionTimeout)
@@ -296,9 +297,13 @@ public class NonBlockingStatsDClient implements StatsDClient {
         }
 
         try {
-            clientChannel = createByteChannel(addressLookup, timeout, connectionTimeout, bufferSize);
+            clientChannel = createByteChannel(addressLookup, timeout, connectionTimeout, bufferSize, false);
 
             ThreadFactory threadFactory = customThreadFactory != null ? customThreadFactory : new StatsDThreadFactory();
+
+            if (maxPacketSizeBytes == 0) {
+                maxPacketSizeBytes = isUDSTransport ? DEFAULT_UDS_MAX_PACKET_SIZE_BYTES : DEFAULT_UDP_MAX_PACKET_SIZE_BYTES;
+            }
 
             statsDProcessor = createProcessor(queueSize, handler, maxPacketSizeBytes, poolSize,
                     processorWorkers, blocking, aggregationFlushInterval, aggregationShards, threadFactory, containerID);
@@ -315,7 +320,7 @@ public class NonBlockingStatsDClient implements StatsDClient {
                 telemetryClientChannel = clientChannel;
                 telemetryStatsDProcessor = statsDProcessor;
             } else {
-                telemetryClientChannel = createByteChannel(telemetryAddressLookup, timeout, connectionTimeout, bufferSize);
+                telemetryClientChannel = createByteChannel(telemetryAddressLookup, timeout, connectionTimeout, bufferSize, true);
 
                 // similar settings, but a single worker and non-blocking.
                 telemetryStatsDProcessor = createProcessor(queueSize, handler, maxPacketSizeBytes,
@@ -478,13 +483,16 @@ public class NonBlockingStatsDClient implements StatsDClient {
     }
 
     ClientChannel createByteChannel(
-            Callable<SocketAddress> addressLookup, int timeout, int connectionTimeout, int bufferSize)
+            Callable<SocketAddress> addressLookup, int timeout, int connectionTimeout, int bufferSize, boolean isTelemetry)
             throws Exception {
         final SocketAddress address = addressLookup.call();
         if (address instanceof NamedPipeSocketAddress) {
             return new NamedPipeClientChannel((NamedPipeSocketAddress) address);
         }
         if (address instanceof UnixSocketAddressWithTransport) {
+            if (!isTelemetry) {
+                isUDSTransport = true;
+            }
             UnixSocketAddressWithTransport unixAddr = ((UnixSocketAddressWithTransport) address);
 
             // TODO: Maybe introduce a `UnixClientChannel` that can handle both stream and datagram sockets? This would
@@ -502,6 +510,9 @@ public class NonBlockingStatsDClient implements StatsDClient {
         // We keep this for backward compatibility
         try {
             if (Class.forName("jnr.unixsocket.UnixSocketAddress").isInstance(address)) {
+                if (!isTelemetry) {
+                    isUDSTransport = true;
+                }
                 return new UnixDatagramClientChannel(address, timeout, bufferSize);
             }
         } catch (ClassNotFoundException e) {
