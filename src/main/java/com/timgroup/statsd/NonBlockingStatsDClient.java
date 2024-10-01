@@ -298,9 +298,11 @@ public class NonBlockingStatsDClient implements StatsDClient {
         try {
             clientChannel = createByteChannel(addressLookup, timeout, connectionTimeout, bufferSize);
 
+            int packetSize = getPacketSize(maxPacketSizeBytes, clientChannel.getTransportType());
+
             ThreadFactory threadFactory = customThreadFactory != null ? customThreadFactory : new StatsDThreadFactory();
 
-            statsDProcessor = createProcessor(queueSize, handler, maxPacketSizeBytes, poolSize,
+            statsDProcessor = createProcessor(queueSize, handler, packetSize, poolSize,
                     processorWorkers, blocking, aggregationFlushInterval, aggregationShards, threadFactory, containerID);
 
             Properties properties = new Properties();
@@ -317,8 +319,10 @@ public class NonBlockingStatsDClient implements StatsDClient {
             } else {
                 telemetryClientChannel = createByteChannel(telemetryAddressLookup, timeout, connectionTimeout, bufferSize);
 
+                int telemetryPacketSize = getPacketSize(maxPacketSizeBytes, telemetryClientChannel.getTransportType());
+
                 // similar settings, but a single worker and non-blocking.
-                telemetryStatsDProcessor = createProcessor(queueSize, handler, maxPacketSizeBytes,
+                telemetryStatsDProcessor = createProcessor(queueSize, handler, telemetryPacketSize,
                         poolSize, 1, false, 0, aggregationShards, threadFactory, containerID);
             }
 
@@ -356,6 +360,19 @@ public class NonBlockingStatsDClient implements StatsDClient {
             }
             this.telemetry.start(telemetryFlushInterval);
         }
+    }
+
+    private int getPacketSize(int defaultPacketSize, ChannelTransportType transportType) {
+        int packetSize = defaultPacketSize;
+
+        if (defaultPacketSize == 0) {
+            if (transportType == ChannelTransportType.UDS || transportType == ChannelTransportType.UDSSTREAM) {
+                packetSize = DEFAULT_UDS_MAX_PACKET_SIZE_BYTES;
+            } else {
+                packetSize = DEFAULT_UDP_MAX_PACKET_SIZE_BYTES;
+            }
+        }
+        return packetSize;
     }
 
     /**

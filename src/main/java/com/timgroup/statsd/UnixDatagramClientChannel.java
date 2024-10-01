@@ -28,7 +28,7 @@ class UnixDatagramClientChannel extends DatagramClientChannel {
     }
 
     @Override
-    public String getTransportType() {
-        return "uds";
+    public ChannelTransportType getTransportType() {
+        return ChannelTransportType.UDS;
     }
 }

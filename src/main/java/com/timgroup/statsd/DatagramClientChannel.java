@@ -44,8 +44,8 @@ class DatagramClientChannel implements ClientChannel {
     }
 
     @Override
-    public String getTransportType() {
-        return "udp";
+    public ChannelTransportType getTransportType() {
+        return ChannelTransportType.UDP;
     }
 
     @Override

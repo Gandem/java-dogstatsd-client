@@ -167,8 +167,8 @@ public class UnixStreamClientChannel implements ClientChannel {
     }
 
     @Override
-    public String getTransportType() {
-        return "uds-stream";
+    public ChannelTransportType getTransportType() {
+        return ChannelTransportType.UDSSTREAM;
     }
 
     @Override

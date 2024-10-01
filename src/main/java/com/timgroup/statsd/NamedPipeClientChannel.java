@@ -40,8 +40,8 @@ class NamedPipeClientChannel implements ClientChannel {
     }
 
     @Override
-    public String getTransportType() {
-        return "namedpipe";
+    public ChannelTransportType getTransportType() {
+        return ChannelTransportType.NAMEDPIPE;
     }
 
     @Override
